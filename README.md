@@ -1,5 +1,5 @@
 # Matrix_Multiplication_OpenMPI
-Matrix Multiplication with OpenMPI, C++
+Matrix Multiplication with OpenMPI, C/C++
 
 
 
