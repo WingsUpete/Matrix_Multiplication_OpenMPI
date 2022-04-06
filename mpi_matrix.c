@@ -4,10 +4,12 @@
 
 #define DEBUG 0
 #if DEBUG
-   #define MAT_SIZE 3
+   #define MAT_SIZE 5
 #else
    #define MAT_SIZE 500
 #endif
+
+#define MASTER 0
 
 void brute_force_matmul(double mat1[MAT_SIZE][MAT_SIZE], double mat2[MAT_SIZE][MAT_SIZE], 
                         double res[MAT_SIZE][MAT_SIZE]) {
@@ -57,8 +59,8 @@ int main(int argc, char *argv[])
    int mpiSize;
    double a[MAT_SIZE][MAT_SIZE],    /* matrix A to be multiplied */
        b[MAT_SIZE][MAT_SIZE],       /* matrix B to be multiplied */
-       c[MAT_SIZE][MAT_SIZE],       /* result matrix C */
-       bfRes[MAT_SIZE][MAT_SIZE];   /* brute force result bfRes */
+       c[MAT_SIZE][MAT_SIZE];       /* result matrix C */
+   double start;   // time
 
    /* You need to intialize MPI here */
    MPI_Init(NULL, NULL);
@@ -66,11 +68,24 @@ int main(int argc, char *argv[])
    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
    MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
 
-   if (rank == 0)
-   {
-      /* master */
+   // Each process takes care of ($pieces) or ($pieces + 1) rows, getting an equal number of rows from ($a) and the whole ($b)
+   // First ($remainder) processes calculate one more rows
+   int pieces = MAT_SIZE / mpiSize;
+   int remainder = MAT_SIZE % mpiSize;
+   int *sendCnts = (int *)malloc(mpiSize * sizeof(int));
+   int *displs = (int *)malloc(mpiSize * sizeof(int));
+   for (int pid = 0, curPtr = 0; pid < mpiSize; ++pid) {
+      displs[pid] = curPtr;
+      sendCnts[pid] = (pid < remainder ? pieces + 1 : pieces) * MAT_SIZE;
 
-      /* First, fill some numbers into the matrix */
+      curPtr += sendCnts[pid];
+   }
+   int bSize = MAT_SIZE * MAT_SIZE;          // size of b
+   // int bufSize = (pieces + 1) * MAT_SIZE;    // minimum buffer size to hold a piece of data
+   double aSlice[pieces + 1][MAT_SIZE], cSlice[pieces + 1][MAT_SIZE];   // buffer for data transmission
+
+   if (rank == MASTER) {
+      /* First, fill some numbers into the matrix to create a test case */
       for (int i = 0; i < MAT_SIZE; i++)
          for (int j = 0; j < MAT_SIZE; j++)
             a[i][j] = i + j;
@@ -79,17 +94,44 @@ int main(int argc, char *argv[])
             b[i][j] = i * j;
 
       /* Measure start time */
-      double start = MPI_Wtime();
+      start = MPI_Wtime();
+   }
 
-      /* Send matrix data to the worker tasks */
+   /* Distribute matrix data from the master to the workers */
+   MPI_Scatterv(
+      &a, sendCnts, displs, MPI_DOUBLE,      // send
+      &aSlice, sendCnts[rank], MPI_DOUBLE,   // receive
+      MASTER,                                // root
+      MPI_COMM_WORLD                         // communicator
+   );
+   MPI_Bcast(&b, bSize, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 
-      /* Receive results from worker tasks */
+   /* Calculation */
+   int nRows = rank < remainder ? pieces + 1 : pieces;
+   for (int i = 0; i < nRows; ++i) {
+      for (int j = 0; j < MAT_SIZE; ++j) {
+         cSlice[i][j] = 0;
+         for (int k = 0; k < MAT_SIZE; ++k) {
+            cSlice[i][j] += aSlice[i][k] * b[k][j];
+         }
+      }
+   }
 
+   /* Collect results to the master */
+   MPI_Gatherv(
+      &cSlice, sendCnts[rank], MPI_DOUBLE,   // send
+      &c, sendCnts, displs, MPI_DOUBLE,      // receive 
+      MASTER,                                // root
+      MPI_COMM_WORLD                         // communicator
+   );
+
+   if (rank == MASTER) {
       /* Measure finish time */
       double finish = MPI_Wtime();
       printf("Done in %f seconds.\n", finish - start);
 
       /* Compare results with those from brute force */
+      double bfRes[MAT_SIZE][MAT_SIZE];   /* brute force result bfRes */
       brute_force_matmul(a, b, bfRes);
 
       if (DEBUG) {
@@ -106,12 +148,12 @@ int main(int argc, char *argv[])
          printf("Result is correct.\n");
       }
    }
-   else
-   {
-      /* worker */
-      /* Receive data from master and compute, then send back to master */
-   }
 
    /* Don't forget to finalize your MPI application */
    MPI_Finalize();
+
+   free(sendCnts);
+   free(displs);
+
+   return 0;
 }

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 nps=(1 2 4 8 16 32)
-# nps=(1) # Debug
+# nps=(1 2) # Debug
 
 filename="mm"
 
@@ -14,6 +14,6 @@ mpicc mpi_matrix.c -o $filename
         echo $delimiter
     fi
     echo "${nps[$npi]} processes:"
-    mpirun $filename -np ${nps[$npi]}
+    mpirun -np ${nps[$npi]} --oversubscribe $filename
     echo $delimiter
 done
