@@ -102,6 +102,8 @@ int main(int argc, char *argv[])
       int same = checkRes(bfRes, c);
       if (!same) {
          printf("ERROR: Your calculation is not the same as the brute force result, please check!\n");
+      } else {
+         printf("Result is correct.\n");
       }
    }
    else
