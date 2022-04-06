@@ -11,7 +11,7 @@
 
 #define MASTER 0
 
-void brute_force_matmul(double mat1[MAT_SIZE][MAT_SIZE], double mat2[MAT_SIZE][MAT_SIZE], 
+void brute_force_matmul(const double mat1[MAT_SIZE][MAT_SIZE], const double mat2[MAT_SIZE][MAT_SIZE], 
                         double res[MAT_SIZE][MAT_SIZE]) {
    /* matrix multiplication of mat1 and mat2, store the result in res */
     for (int i = 0; i < MAT_SIZE; ++i) {
@@ -24,7 +24,7 @@ void brute_force_matmul(double mat1[MAT_SIZE][MAT_SIZE], double mat2[MAT_SIZE][M
     }
 }
 
-int checkRes(double target[MAT_SIZE][MAT_SIZE], double res[MAT_SIZE][MAT_SIZE]) {
+int checkRes(const double target[MAT_SIZE][MAT_SIZE], const double res[MAT_SIZE][MAT_SIZE]) {
    /* check whether the obtained result is the same as the intended target; if true return 1, else return 0 */
    for (int i = 0; i < MAT_SIZE; ++i) {
       for (int j = 0; j < MAT_SIZE; ++j) {
@@ -36,7 +36,7 @@ int checkRes(double target[MAT_SIZE][MAT_SIZE], double res[MAT_SIZE][MAT_SIZE]) 
    return 1;
 }
 
-void printMat(double mat[MAT_SIZE][MAT_SIZE]) {
+void printMat(const double mat[MAT_SIZE][MAT_SIZE]) {
    for (int i = 0; i < MAT_SIZE; ++i) {
       for (int j = 0; j < MAT_SIZE; ++j) {
          printf("%.1f", mat[i][j]);
@@ -48,7 +48,7 @@ void printMat(double mat[MAT_SIZE][MAT_SIZE]) {
    }
 }
 
-void debugMat(char* tag, double mat[MAT_SIZE][MAT_SIZE]) {
+void debugMat(char* tag, const double mat[MAT_SIZE][MAT_SIZE]) {
    printf("(%s)\n", tag);
    printMat(mat);
 }
@@ -81,8 +81,6 @@ int main(int argc, char *argv[])
       curPtr += sendCnts[pid];
    }
    int bSize = MAT_SIZE * MAT_SIZE;          // size of b
-   // int bufSize = (pieces + 1) * MAT_SIZE;    // minimum buffer size to hold a piece of data
-   double aSlice[pieces + 1][MAT_SIZE], cSlice[pieces + 1][MAT_SIZE];   // buffer for data transmission
 
    if (rank == MASTER) {
       /* First, fill some numbers into the matrix to create a test case */
@@ -99,10 +97,10 @@ int main(int argc, char *argv[])
 
    /* Distribute matrix data from the master to the workers */
    MPI_Scatterv(
-      &a, sendCnts, displs, MPI_DOUBLE,      // send
-      &aSlice, sendCnts[rank], MPI_DOUBLE,   // receive
-      MASTER,                                // root
-      MPI_COMM_WORLD                         // communicator
+      &a, sendCnts, displs, MPI_DOUBLE,                                 // send
+      rank == MASTER ? MPI_IN_PLACE : &a, sendCnts[rank], MPI_DOUBLE,   // receive
+      MASTER,                                                           // root
+      MPI_COMM_WORLD                                                    // communicator
    );
    MPI_Bcast(&b, bSize, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 
@@ -110,19 +108,19 @@ int main(int argc, char *argv[])
    int nRows = rank < remainder ? pieces + 1 : pieces;
    for (int i = 0; i < nRows; ++i) {
       for (int j = 0; j < MAT_SIZE; ++j) {
-         cSlice[i][j] = 0;
+         c[i][j] = 0;
          for (int k = 0; k < MAT_SIZE; ++k) {
-            cSlice[i][j] += aSlice[i][k] * b[k][j];
+            c[i][j] += a[i][k] * b[k][j];
          }
       }
    }
 
    /* Collect results to the master */
    MPI_Gatherv(
-      &cSlice, sendCnts[rank], MPI_DOUBLE,   // send
-      &c, sendCnts, displs, MPI_DOUBLE,      // receive 
-      MASTER,                                // root
-      MPI_COMM_WORLD                         // communicator
+      rank == MASTER ? MPI_IN_PLACE : &c, sendCnts[rank], MPI_DOUBLE,   // send
+      &c, sendCnts, displs, MPI_DOUBLE,                                 // receive 
+      MASTER,                                                           // root
+      MPI_COMM_WORLD                                                    // communicator
    );
 
    if (rank == MASTER) {
